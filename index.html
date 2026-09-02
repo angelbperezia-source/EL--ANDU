@@ -342,7 +342,7 @@
 
     <div>
       <p style="font-size: 0.8rem; opacity: 0.75; margin-bottom: 10px;">
-        Deslizá el dedo sobre la pantalla o usá las flechas ◄ ► / A-D
+        Deslizá el dedo sobre la pantalla o usá las flechas / W-A-S-D
       </p>
       <button class="btn" id="btn-start">Iniciar el Camino</button>
     </div>
@@ -352,7 +352,7 @@
   <div id="screen-end" class="ui-overlay hidden">
     <div style="margin: auto 0;">
       <span class="tag">Memoria del Firmamento</span>
-      <h2>¡Constelación Revelada!</h2>
+      <h2 id="end-title">¡Constelación Revelada!</h2>
       
       <p>
         Has completado el trazado sagrado de <strong>So Mañec</strong> en el firmamento chaqueño, perpetuando la guía para las futuras generaciones.
@@ -380,7 +380,8 @@
 const STATE = {
   START: 'START',
   PLAYING: 'PLAYING',
-  END: 'END'
+  END: 'END',
+  LOSS: 'LOSS'
 };
 
 let currentState = STATE.START;
@@ -436,9 +437,12 @@ const player = {
   y: height * 0.78,
   radius: 22,
   targetX: width / 2,
+  targetY: height * 0.78,
   speed: 9,
   starsCollected: 0,
   maxStars: 25,
+  dogHits: 0,
+  childHits: 0,
   shakeTime: 0,
   animFrame: 0,
   shieldTimer: 0 // Escudo protector temporal
@@ -453,6 +457,7 @@ let collectibles = [];
 // Tiempos y balanceo
 let obstacleTimer = 0;
 let collectibleTimer = 0;
+let obstacleCount = 0;
 let wayOffset = 0; // Animación de flujo de la Vía Láctea
 
 // Inicializar fondo cósmico
@@ -471,16 +476,20 @@ function initBackgroundStars() {
 }
 
 // Teclado
-const keys = { left: false, right: false };
+const keys = { left: false, right: false, up: false, down: false };
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+  if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
 });
 
 window.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
   if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+  if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
 });
 
 // Controles Táctiles Integrados (Drag / Tap)
@@ -498,7 +507,9 @@ function handleTouchMove(e) {
   const touch = e.touches[0];
   const rect = canvas.getBoundingClientRect();
   const touchX = touch.clientX - rect.left;
+  const touchY = touch.clientY - rect.top;
   player.targetX = Math.max(player.radius, Math.min(width - player.radius, touchX));
+  player.targetY = Math.max(player.radius, Math.min(height - player.radius, touchY));
 }
 
 canvas.addEventListener('touchstart', handleTouchMove, { passive: true });
@@ -506,8 +517,12 @@ canvas.addEventListener('touchmove', handleTouchMove, { passive: true });
 
 function resetGame() {
   player.x = width / 2;
+  player.y = height * 0.78;
   player.targetX = width / 2;
+  player.targetY = height * 0.78;
   player.starsCollected = 0;
+  player.dogHits = 0;
+  player.childHits = 0;
   player.shakeTime = 0;
   player.animFrame = 0;
   player.shieldTimer = 0;
@@ -517,6 +532,9 @@ function resetGame() {
   particles = [];
   obstacleTimer = 0;
   collectibleTimer = 0;
+  obstacleCount = 0;
+
+  for (let i = 0; i < 4; i++) spawnObstacle(i % 2 === 0 ? 'dog' : 'child');
   
   shieldBadge.classList.remove('active');
   starCountEl.textContent = '0';
@@ -525,16 +543,18 @@ function resetGame() {
   initBackgroundStars();
 }
 
-// Crear Cazador o Perro Cazador
-function spawnObstacle() {
-  const isDog = Math.random() > 0.65;
+// Crear Niño o Perro
+function spawnObstacle(type) {
+  const isDog = type ? type === 'dog' : obstacleCount % 2 === 0;
+  obstacleCount++;
   const currentSpeed = 2.8 + (player.starsCollected / player.maxStars) * 2.0; // Incremento progresivo
+  const edge = Math.floor(Math.random() * 4);
   
   obstacles.push({
-    x: Math.random() * (width - 70) + 35,
-    y: -40,
+    x: edge === 1 ? width + 30 : edge === 3 ? -30 : Math.random() * width,
+    y: edge === 0 ? -30 : edge === 2 ? height + 30 : Math.random() * height,
     radius: isDog ? 16 : 22,
-    type: isDog ? 'dog' : 'hunter',
+    type: isDog ? 'dog' : 'child',
     speed: currentSpeed + (Math.random() * 0.8),
     angle: Math.random() * Math.PI * 2
   });
@@ -580,9 +600,13 @@ function update() {
   // Movimiento teclado / botones
   if (keys.left || touchLeftActive) player.targetX -= player.speed;
   if (keys.right || touchRightActive) player.targetX += player.speed;
+  if (keys.up) player.targetY -= player.speed;
+  if (keys.down) player.targetY += player.speed;
 
   player.targetX = Math.max(player.radius, Math.min(width - player.radius, player.targetX));
+  player.targetY = Math.max(player.radius, Math.min(height - player.radius, player.targetY));
   player.x += (player.targetX - player.x) * 0.22;
+  player.y += (player.targetY - player.y) * 0.22;
 
   // Tiempo del escudo
   if (player.shieldTimer > 0) {
@@ -608,13 +632,6 @@ function update() {
     }
   });
 
-  // Frecuencia de spawner
-  obstacleTimer++;
-  if (obstacleTimer >= Math.max(45, 80 - Math.floor(player.starsCollected * 1.2))) {
-    spawnObstacle();
-    obstacleTimer = 0;
-  }
-
   collectibleTimer++;
   if (collectibleTimer >= 40) {
     spawnCollectible();
@@ -624,7 +641,11 @@ function update() {
   // Actualizar Obstáculos
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const obs = obstacles[i];
-    obs.y += obs.speed;
+    const deltaX = player.x - obs.x;
+    const deltaY = player.y - obs.y;
+    const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+    obs.x += (deltaX / distance) * obs.speed;
+    obs.y += (deltaY / distance) * obs.speed;
 
     // Colisión con Ñandú
     const dist = Math.hypot(player.x - obs.x, player.y - obs.y);
@@ -633,15 +654,20 @@ function update() {
         // Escudo repele el obstáculo
         createParticles(obs.x, obs.y, '#49869e', 14, 1.5);
       } else {
-        // Interacción sutil sin eliminar juego: desaceleración/partículas de tierra
         createParticles(obs.x, obs.y, '#9e4331', 12);
         player.shakeTime = 14;
+
+        if (obs.type === 'dog') player.dogHits++;
+        if (obs.type === 'child') player.childHits++;
+
+        if (player.dogHits >= 2 || (player.childHits >= 2 && player.dogHits >= 1)) {
+          loseGame();
+        }
       }
       obstacles.splice(i, 1);
+      if (currentState === STATE.PLAYING) spawnObstacle(obs.type);
       continue;
     }
-
-    if (obs.y > height + 60) obstacles.splice(i, 1);
   }
 
   // Actualizar Recolectables
@@ -792,22 +818,51 @@ function draw() {
     ctx.fillStyle = '#9e4331';
     ctx.strokeStyle = '#9e4331';
 
-    if (obs.type === 'hunter') {
-      // Cazador con Lanza
+    if (obs.type === 'child') {
+      // Niño
+      ctx.fillStyle = '#f3c25b';
       ctx.beginPath();
       ctx.arc(0, -14, 6, 0, Math.PI * 2); // Cabeza
       ctx.moveTo(-9, 12); ctx.lineTo(0, -5); ctx.lineTo(9, 12); // Cuerpo
       ctx.fill();
 
+      ctx.strokeStyle = '#f3c25b';
       ctx.beginPath();
-      ctx.moveTo(-12, -18); ctx.lineTo(14, 18); // Lanza
-      ctx.lineWidth = 2.5;
+      ctx.moveTo(-5, -2); ctx.lineTo(-14, 7);
+      ctx.moveTo(5, -2); ctx.lineTo(14, 7);
+      ctx.moveTo(-7, 10); ctx.lineTo(-10, 20);
+      ctx.moveTo(7, 10); ctx.lineTo(10, 20);
+      ctx.lineWidth = 3;
       ctx.stroke();
+
+      ctx.fillStyle = '#f3c25b';
+      ctx.beginPath();
+      ctx.arc(-14, 7, 2.5, 0, Math.PI * 2);
+      ctx.arc(14, 7, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     } else {
-      // Perro Cazador
+      // Perro
       ctx.beginPath();
       ctx.ellipse(0, 2, 13, 7, 0, 0, Math.PI * 2);
       ctx.arc(8, -4, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#9e4331';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-8, 7); ctx.lineTo(-9, 15);
+      ctx.moveTo(2, 7); ctx.lineTo(3, 15);
+      ctx.moveTo(-12, 1); ctx.lineTo(-18, -5);
+      ctx.stroke();
+
+      ctx.fillStyle = '#9e4331';
+      ctx.beginPath();
+      ctx.moveTo(6, -7); ctx.lineTo(5, -14); ctx.lineTo(10, -9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fcf8f0';
+      ctx.beginPath();
+      ctx.arc(10, -5, 1.2, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -890,6 +945,7 @@ function startGame() {
 
 function endGame() {
   currentState = STATE.END;
+  document.getElementById('end-title').textContent = '¡Constelación Revelada!';
   finalStarsEl.textContent = player.starsCollected;
 
   const quotes = [
@@ -899,6 +955,14 @@ function endGame() {
   ];
   document.getElementById('final-quote').textContent = quotes[Math.floor(Math.random() * quotes.length)];
 
+  screenEnd.classList.remove('hidden');
+}
+
+function loseGame() {
+  currentState = STATE.LOSS;
+  document.getElementById('end-title').textContent = 'El Ñandú necesita descansar';
+  document.getElementById('final-quote').textContent = `Perros: ${player.dogHits} · Niños: ${player.childHits}. El camino celeste puede intentarse otra vez.`;
+  finalStarsEl.textContent = player.starsCollected;
   screenEnd.classList.remove('hidden');
 }
 
